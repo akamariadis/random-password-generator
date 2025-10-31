@@ -1,2 +1,3 @@
-# random-password-generator
-This C++ code generates a random password based on user-selected criteria. It first tries to obtain secure random numbers from the operating system, using Windows CryptoAPI (CryptGenRandom) or /dev/urandom on Unix systems. If that fails, it falls back to a weaker random generator using rand().
+# RANDOM-PASSWORD-GENERATOR
+
+The code featured in this repository, builds an alphabet from requested character classes, including lower case and upper characters, digits as well as symbols. It guarantees at least one character from each chosen class, fills the rest randomly, shuffles the result, and prints a password of the requested length. Random values are taken from the OS CSPRNG when available and from a weaker rand() - based fallback otherwise.
