@@ -1,3 +1,3 @@
-# RANDOM-PASSWORD-GENERATOR
+# RANDOM PASSWORD GENERATOR
 
 This C++ program is a cryptographically secure command line password generator, that creates random passwords based on configurable criteria, such as length and character classes (uppercase, lowercase, digits, and symbols). It prioritizes security by attempting to retrieve entropy from OS - specific sources (Windows CryptoAPI or /dev/urandom) and uses rejection sampling to ensure a strictly uniform distribution of random numbers, avoiding modulo bias. The generation algorithm guarantees that at least one character from each selected category is included, optionally filters out ambiguous characters (like 'l' and '1'), and applies a Fisher-Yates shuffle to the final string to randomize character positions. It accepts configuration via both standard input and command-line flags, handles errors gracefully, and outputs the resulting password to the console.
