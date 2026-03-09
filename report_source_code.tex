@@ -1,0 +1,155 @@
+\documentclass[conference]{IEEEtran}
+\IEEEoverridecommandlockouts
+
+\usepackage{cite}
+\usepackage{amsmath,amssymb,amsfonts}
+\usepackage{algorithmic}
+\usepackage{graphicx}
+\usepackage{textcomp}
+\usepackage{xcolor}
+\usepackage{listings}
+\usepackage{hyperref}
+
+\definecolor{codegreen}{rgb}{0,0.6,0}
+\definecolor{codegray}{rgb}{0.5,0.5,0.5}
+\definecolor{codepurple}{rgb}{0.58,0,0.82}
+
+\lstdefinestyle{mystyle}{
+    commentstyle=\color{codegreen},
+    keywordstyle=\color{magenta},
+    numberstyle=\tiny\color{codegray},
+    stringstyle=\color{codepurple},
+    basicstyle=\ttfamily\scriptsize,
+    breakatwhitespace=false,         
+    breaklines=true,                 
+    captionpos=b,                    
+    keepspaces=true,                 
+    numbers=left,                    
+    numbersep=5pt,                  
+    showspaces=false,                
+    showstringspaces=false,
+    showtabs=false,                  
+    tabsize=2
+}
+
+\lstset{style=mystyle}
+
+\def\BibTeX{{\rm B\kern-.05em{\sc i\kern-.025em b}\kern-.08em
+    T\kern-.1667em\lower.7ex\hbox{E}\kern-.125emX}}
+
+\begin{document}
+
+\title{Analysis of a Cross-Platform Cryptographically Secure Password Generator in C++}
+
+\author{\IEEEauthorblockN{Angelos Kamariadis}
+\IEEEauthorblockA{\textit{School of Electrical and Computer Engineering} \\
+\textit{National Technical University of Athens}\\
+Athens, Greece \\
+angeloskamariadis@gmail.com}
+}
+
+\maketitle
+
+\begin{abstract}
+This paper provides a technical analysis of a C++ application designed to generate secure, random passwords. The software utilizes Operating System (OS) specific cryptographic primitives to ensure high entropy, implements rejection sampling to eliminate modulo bias, and employs the Fisher-Yates shuffle algorithm to ensure uniform distribution of character classes. The code addresses common security pitfalls associated with standard pseudo-random number generators.
+\end{abstract}
+
+\begin{IEEEkeywords}
+cryptography, C++, PRNG, security, modulo bias, rejection sampling
+\end{IEEEkeywords}
+
+\section{Introduction}
+Password generation is a critical component of computer security systems. A pervasive vulnerability in many ad-hoc password generators is the reliance on deterministic algorithms, such as the standard C library \texttt{rand()}, which can be predicted if the seed state is compromised or guessed.
+
+The code analyzed in this paper implements a \textbf{Cryptographically Secure Pseudo-Random Number Generator (CSPRNG)}. It abstracts platform-specific implementations to ensure portability between Windows and POSIX (Linux/Unix) systems, providing a robust solution for secure credential generation.
+
+\section{Entropy Collection}
+The core security feature of the analyzed program is its method of gathering entropy. The function \texttt{get\_entropy\_uint32} serves as a wrapper for OS-level cryptographic functions, ensuring that the random seed is derived from unpredictable hardware and system noise.
+
+\subsection{Cross-Platform Implementation}
+To maintain portability, the code utilizes preprocessor directives (\texttt{\#ifdef \_WIN32}) to compile specific instructions based on the target operating system:
+
+\begin{itemize}
+    \item \textbf{Windows:} It utilizes the Microsoft CryptoAPI (\texttt{CryptGenRandom}). This derives randomness from opaque system data such as process IDs, thread IDs, and the high-resolution system clock.
+    \item \textbf{Linux/Unix:} It reads from \texttt{/dev/urandom}. This is a special character file that provides an interface to the kernel's non-blocking random number generator, gathering environmental noise from device drivers and interrupts.
+\end{itemize}
+
+\subsection{Fallback Mechanism}
+A fallback function, \texttt{fallback\_prng}, is implemented using the standard \texttt{rand()} seeded with the current time and memory address.
+
+\textit{Note:} It is crucial to observe that this fallback is \textbf{not} cryptographically secure. It serves only as a failsafe to prevent application crashes (Denial of Service) if the OS-level crypto context fails to acquire, though it degrades the security posture significantly.
+
+\section{Elimination of Modulo Bias}
+One of the most sophisticated aspects of this implementation is the \texttt{uniform\_uint32} function. When mapping a large random number range to a smaller range (e.g., selecting an index for a character array of size 62), a naive approach uses the modulo operator:
+\begin{equation}
+    r \pmod n
+\end{equation}
+However, if the maximum value of the random number generator ($2^{32}-1$) is not evenly divisible by $n$, numbers at the lower end of the range will appear slightly more frequently than higher numbers. This statistical anomaly is known as \textbf{Modulo Bias}.
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.48\textwidth]{figure.png} 
+    \caption{Visual representation of bias elimination: Naive Modulo vs. Rejection Sampling.}
+    \label{fig:bias}
+\end{figure}
+
+To mitigate this, the code implements \textbf{Rejection Sampling}:
+\begin{enumerate}
+    \item Calculate a \texttt{limit}: the largest multiple of the range that fits within a 32-bit integer.
+    \item Generate a random number.
+    \item If the number exceeds this limit, it is ``rejected'' (discarded), and a new number is generated.
+\end{enumerate}
+
+This technique ensures that every possible outcome in the target range has an exactly equal probability of being selected:
+\begin{equation}
+    P(x) = \frac{1}{n}, \quad \forall x \in \{0, \dots, n-1\}
+\end{equation}
+
+\section{Password Construction Algorithm}
+The \texttt{generate\_password} function constructs the password in three distinct phases: Character Filtering, Guaranteed Inclusion, and Backfilling.
+
+\subsection{Pool Filtering}
+The user's requirements (uppercase, lowercase, digits, symbols) determine the ``pools'' of allowed characters. The code includes a logic branch for \texttt{avoid\_ambiguous}. If enabled, characters that look similar (e.g., '1', 'l', 'I', '0', 'O') are mathematically removed from the available pools.
+
+\subsection{Guaranteed Inclusion}
+To satisfy complexity rules (e.g., ``Must contain at least one symbol''), the code iterates through every selected pool and picks one character from each.
+\begin{equation}
+    P_{initial} = \{c_1, c_2, ..., c_k\}
+\end{equation}
+Where $k$ is the number of character categories selected. This ensures that the password meets complexity requirements even if the requested length is short.
+
+\subsection{Backfilling and Shuffling}
+The remaining length of the password is filled by selecting characters uniformly from the combined alphabet of all selected groups.
+
+Because the ``Guaranteed Inclusion'' step places specific character types at the very beginning of the string (e.g., the first character is always lowercase, the second always uppercase), the resulting string is structurally predictable. To fix this, the code applies a \textbf{Fisher-Yates Shuffle}.
+
+This algorithm iterates backward through the string, swapping the current element with a randomly selected element that precedes it. This destroys any structural patterns created during the generation phase.
+
+\section{Interface and Input Handling}
+The \texttt{main} function provides a Command Line Interface (CLI). It parses arguments to toggle character sets (e.g., \texttt{--no-symbols}) or set length (\texttt{-n}).
+
+It is worth noting a minor redundancy in the code: it attempts to read the password size from Standard Input (\texttt{cin}) before parsing command-line arguments. This allows the program to be piped into, though the standard CLI convention usually prioritizes arguments over the standard input for configuration.
+
+\section{Conclusion}
+The analyzed code represents a robust implementation of a password generator. By prioritizing OS-provided entropy over standard library randomization and mathematically correcting for modulo bias, it achieves a high level of cryptographic strength suitable for security-sensitive applications.
+
+\begin{thebibliography}{00}
+
+\bibitem{knuth97}
+D. E. Knuth, \emph{The Art of Computer Programming, Volume 2: Seminumerical Algorithms}, 3rd ed. Reading, MA: Addison-Wesley, 1997.
+
+\bibitem{nist800}
+E. Barker and J. Kelsey, ``Recommendation for Random Number Generation Using Deterministic Random Bit Generators,'' National Institute of Standards and Technology, Gaithersburg, MD, NIST Special Publication 800-90A Rev. 1, 2015.
+
+\bibitem{ms_crypt}
+Microsoft Corporation, ``CryptGenRandom function (wincrypt.h),'' \emph{Microsoft Learn}, 2021. [Online]. Available: https://learn.microsoft.com/en-us/windows/win32/api/wincrypt/nf-wincrypt-cryptgenrandom. [Accessed: Mar. 9, 2026].
+
+\bibitem{linux_urandom}
+Linux Kernel Organization, ``urandom(4) - Linux manual page,'' \emph{man7.org}, 2024. [Online]. Available: https://man7.org/linux/man-pages/man4/urandom.4.html.
+
+\bibitem{fisher38}
+R. A. Fisher and F. Yates, \emph{Statistical Tables for Biological, Agricultural and Medical Research}. London: Oliver and Boyd, 1938, pp. 26--27.
+
+\end{thebibliography}
+
+\end{document}
